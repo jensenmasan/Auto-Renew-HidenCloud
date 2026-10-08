@@ -503,11 +503,17 @@ def get_server_id(page):
         html = page.content()
         log(f"📝 页面长度: {len(html)}, URL: {page.url}")
 
-        # 方案1: 从 href 链接中提取 /service/数字/manage
-        matches = re.findall(r'/service/(\d+)/manage', html)
-        if matches:
-            server_id = matches[0]
-            log(f"✅ 从链接中获取到 Server ID: {server_id}")
+        # 方案1: 从 href 链接中提取服务页真实链接（面板改版后 /manage 后缀已 404，
+        # 以控制台上实际出现的链接为准，不再写死拼接）
+        global SERVICE_PATH_FOUND
+        service_links = sorted(set(re.findall(r'/service/[\w\-/]+', html)))
+        if service_links:
+            log(f"🔍 控制台服务链接: {service_links[:10]}")
+        link_match = re.search(r'(/service/(\d+)[\w\-/]*)', html)
+        if link_match:
+            SERVICE_PATH_FOUND = link_match.group(1).rstrip('/')
+            server_id = link_match.group(2)
+            log(f"✅ 从链接中获取到 Server ID: {server_id}（服务页: {SERVICE_PATH_FOUND}）")
             return server_id
 
         # 方案2: 从 span 标签中提取 #数字 (如 "Free Server #218079")；过滤全 0 的误匹配
@@ -582,6 +588,12 @@ def renew_service(page):
             log(f"🔍 正文节选: {safe_body}")
         except Exception as e:
             log(f"🔍 页面自诊失败: {e}")
+        try:
+            if "not found" in page.title().lower():
+                log("❌ 服务页 404：拼出的地址已失效（详见上方控制台真实链接），先按真实链接修正再续期")
+                return False
+        except Exception:
+            pass
         renew_btn = page.locator('button:has-text("Renew"), a:has-text("Renew"), button:has-text("Extend"), a:has-text("Extend"), button:has-text("续期"), a:has-text("续期"), button:has-text("延长"), a:has-text("延长")').first
         create_btn = page.locator('button:has-text("Create Invoice")').first
 
@@ -719,7 +731,7 @@ def main():
             if not server_id:
                 log("❌ 无法获取 Server ID，退出。")
                 sys.exit(1)
-            SERVICE_URL = f"{BASE_URL}/service/{server_id}/manage"
+            SERVICE_URL = f"{BASE_URL}{SERVICE_PATH_FOUND}" if SERVICE_PATH_FOUND else f"{BASE_URL}/service/{server_id}/manage"
 
             # 获取旧到期时间
             old_due = get_due_date(page)
