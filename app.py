@@ -534,6 +534,8 @@ def get_due_date(page):
             r"Due date\s+(\d{1,2}\s+[A-Za-z]{3}\s+\d{4})",
             r"Due date\s*\n\s*(\d{1,2}\s+[A-Za-z]{3}\s+\d{4})",
             r"Due date.*?(\d{1,2}\s+[A-Za-z]{3}\s+\d{4})",
+            r"(?:Due date|Expires?|Expiry)\s*[:：]?\s*(\d{1,2}\s+[A-Za-z]{3}\s+\d{4})",
+            r"(?:到期时间|到期日期|过期时间)\s*[:：]?\s*(\d{4}[-/]\d{1,2}[-/]\d{1,2})",
         ]
         for pattern in patterns:
             match = re.search(pattern, body_text, re.IGNORECASE | re.DOTALL)
@@ -554,8 +556,16 @@ def renew_service(page):
         handle_cloudflare(page)
 
         log("🖱️ 准备点击 Renew 按钮...")
-        renew_btn = page.locator('button:has-text("Renew")')
-        create_btn = page.locator('button:has-text("Create Invoice")')
+        # 改版自诊：把页面上可见按钮/链接文字打进日志，找不到 Renew 时一眼能看出它现在叫什么
+        try:
+            visible_buttons = page.evaluate(
+                "() => Array.from(document.querySelectorAll('button, a.btn, a[role=button]')).filter(b => b.offsetParent !== null).map(b => (b.innerText || '').trim()).filter(t => t && t.length < 40)"
+            )
+            log(f"🔍 页面可见按钮: {visible_buttons}")
+        except Exception:
+            pass
+        renew_btn = page.locator('button:has-text("Renew"), a:has-text("Renew"), button:has-text("Extend"), a:has-text("Extend"), button:has-text("续期"), a:has-text("续期"), button:has-text("延长"), a:has-text("延长")').first
+        create_btn = page.locator('button:has-text("Create Invoice")').first
 
         modal_opened = False
         for i in range(6):
