@@ -556,24 +556,48 @@ def renew_service(page):
         handle_cloudflare(page)
 
         log("🖱️ 准备点击 Renew 按钮...")
-        # 改版自诊：把页面上可见按钮/链接文字打进日志，找不到 Renew 时一眼能看出它现在叫什么
+        # 改版自诊二轮：等 SPA 渲染完，把页面上全部可点元素（含隐藏菜单项）与正文要点打进日志，
+        # 邮箱打码；Renew 按钮再按文字兜底找任意元素
         try:
-            visible_buttons = page.evaluate(
-                "() => Array.from(document.querySelectorAll('button, a.btn, a[role=button]')).filter(b => b.offsetParent !== null).map(b => (b.innerText || '').trim()).filter(t => t && t.length < 40)"
-            )
-            log(f"🔍 页面可见按钮: {visible_buttons}")
+            page.wait_for_load_state("networkidle", timeout=30000)
         except Exception:
             pass
+        try:
+            page_dump = page.evaluate(
+                """() => {
+                    const els = Array.from(document.querySelectorAll('button, a, [role="button"], input[type="button"], input[type="submit"]'));
+                    const items = els.map(b => {
+                        const t = (b.innerText || b.value || '').trim().replace(/\s+/g, ' ');
+                        let href = '';
+                        try { href = b.getAttribute('href') || ''; } catch (e) {}
+                        return t ? (t.slice(0, 50) + (href ? ' -> ' + href.split('?')[0] : '')) : '';
+                    }).filter(Boolean).slice(0, 80);
+                    const body = (document.body?.innerText || '').replace(/\s+/g, ' ').slice(0, 1200);
+                    return { url: location.href, title: document.title, items, body };
+                }"""
+            )
+            safe_body = re.sub(r"[\w.+-]+@[\w-]+\.[\w.]+", "***", page_dump.get("body", ""))
+            log(f"🔍 页面: {page_dump.get('url')} | {page_dump.get('title')}")
+            log(f"🔍 可点元素: {page_dump.get('items')}")
+            log(f"🔍 正文节选: {safe_body}")
+        except Exception as e:
+            log(f"🔍 页面自诊失败: {e}")
         renew_btn = page.locator('button:has-text("Renew"), a:has-text("Renew"), button:has-text("Extend"), a:has-text("Extend"), button:has-text("续期"), a:has-text("续期"), button:has-text("延长"), a:has-text("延长")').first
         create_btn = page.locator('button:has-text("Create Invoice")').first
 
         modal_opened = False
         for i in range(6):
             try:
-                renew_btn.wait_for(state="visible", timeout=10000)
-                renew_btn.scroll_into_view_if_needed()
-                log(f"🖱️ 第 {i+1} 次尝试点击 'Renew'...")
-                renew_btn.click()
+                try:
+                    renew_btn.wait_for(state="visible", timeout=10000)
+                    renew_btn.scroll_into_view_if_needed()
+                    log(f"🖱️ 第 {i+1} 次尝试点击 'Renew'...")
+                    renew_btn.click()
+                except Exception:
+                    fallback = page.get_by_text(re.compile(r"renew|extend|续期|延长", re.I)).first
+                    fallback.wait_for(state="visible", timeout=5000)
+                    log(f"🖱️ 第 {i+1} 次改按文字兜底点击续期入口...")
+                    fallback.click()
 
                 # 等待一小段时间，检测是否出现“未到续期时间”弹窗
                 time.sleep(3)
