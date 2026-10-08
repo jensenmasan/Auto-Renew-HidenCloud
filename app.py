@@ -504,13 +504,34 @@ def get_server_id(page):
         html = page.content()
         log(f"📝 页面长度: {len(html)}, URL: {page.url}")
 
-        # 方案1: 从 href 链接中提取服务页真实链接（面板改版后 /manage 后缀已 404，
-        # 以控制台上实际出现的链接为准，不再写死拼接）
+        # 方案1: 从服务链接中提取服务页真实地址（面板改版后 /manage 后缀已 404，
+        # 以控制台上实际出现的链接为准，不再写死拼接；原始 HTML 是 SPA 空壳时改看渲染后 DOM）
         global SERVICE_PATH_FOUND
-        service_links = sorted(set(re.findall(r'/service/[\w\-/]+', html)))
+        candidate_paths = set(re.findall(r'/service/[\w\-/]+', html))
+        try:
+            page.wait_for_load_state("networkidle", timeout=20000)
+        except Exception:
+            pass
+        try:
+            live_hrefs = page.evaluate(
+                "() => Array.from(document.querySelectorAll('a')).map(a => a.getAttribute('href') || '').filter(h => h.includes('service'))"
+            )
+            for href in live_hrefs or []:
+                path = href.split('dash.hidencloud.com')[-1].split('?')[0]
+                if path.startswith('/service/'):
+                    candidate_paths.add(path)
+        except Exception:
+            pass
+        service_links = sorted(candidate_paths)
         if service_links:
             log(f"🔍 控制台服务链接: {service_links[:10]}")
-        link_match = re.search(r'(/service/(\d+)[\w\-/]*)', html)
+        link_match = None
+        for path in service_links:
+            link_match = re.search(r'^(/service/(\d+)[\w\-/]*)$', path)
+            if link_match:
+                break
+        if not link_match:
+            link_match = re.search(r'(/service/(\d+)[\w\-/]*)', html)
         if link_match:
             SERVICE_PATH_FOUND = link_match.group(1).rstrip('/')
             server_id = link_match.group(2)
