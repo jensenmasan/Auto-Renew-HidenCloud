@@ -17,6 +17,7 @@ TG_CHAT_ID   = os.environ.get('TG_CHAT_ID') or ""      # Telegram Chat ID,可选
 TG_BOT_TOKEN = os.environ.get('TG_BOT_TOKEN') or ""    # Telegram Bot Token,可选 
 
 BASE_URL = "https://dash.hidencloud.com"
+SERVICE_PATH_FOUND = ""  # 控制台上服务页的真实路径，由 get_server_id 按实际链接填入
 LOGIN_URL = f"{BASE_URL}/auth/login"
 
 # --- 代理配置（由工作流 shell 脚本写入 $GITHUB_ENV）---
